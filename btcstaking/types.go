@@ -25,7 +25,7 @@ const (
 
 var (
 	unspendableKeyPathKey    = unspendableKeyPathInternalPubKeyInternal(unspendableKeyPath)
-	errBuildingStakingInfo   = fmt.Errorf("error building staking info")
+	ErrBuildingStakingInfo   = fmt.Errorf("error building staking info")
 	errBuildingUnbondingInfo = fmt.Errorf("error building unbonding info")
 	ErrDuplicatedKeyInScript = fmt.Errorf("duplicated key in script")
 )
@@ -400,7 +400,7 @@ func BuildStakingInfo(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errBuildingStakingInfo, err)
+		return nil, fmt.Errorf("%s: %w", ErrBuildingStakingInfo, err)
 	}
 
 	var unbondingPaths [][]byte
@@ -418,13 +418,13 @@ func BuildStakingInfo(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errBuildingStakingInfo, err)
+		return nil, fmt.Errorf("%s: %w", ErrBuildingStakingInfo, err)
 	}
 
 	taprootPkScript, err := sh.taprootPkScript(net)
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errBuildingStakingInfo, err)
+		return nil, fmt.Errorf("%s: %w", ErrBuildingStakingInfo, err)
 	}
 
 	stakingOutput := wire.NewTxOut(int64(stakingAmount), taprootPkScript)

@@ -18,6 +18,8 @@ func TestInitCmd(t *testing.T) {
 		"init",     // Test the init cmd
 		"app-test", // Moniker
 		fmt.Sprintf("--%s=%s", cli.FlagOverwrite, "true"), // Overwrite genesis.json, in case it already exists
+		fmt.Sprintf("--%s=%s", "home", t.TempDir()),
+
 		"--no-bls-password",
 	})
 

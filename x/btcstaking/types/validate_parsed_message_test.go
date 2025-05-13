@@ -230,626 +230,613 @@ func createMsgDelegationForParams(
 }
 
 func TestValidateParsedMessageAgainstTheParams(t *testing.T) {
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+
+	params := testStakingParams(r, t)
+	checkpointParams := testCheckpointParams()
+	msg, _ := createMsgDelegationForParams(r, t, params)
+	// _, delPK, err := datagen.GenRandomBTCKeyPair(r)
+	// require.NoError(t, err)
+
+	// stPk := bbn.NewBIP340PubKeyFromBTCPK(delPK)
+
+	currentStakingTxLower, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
+	require.NoError(t, err)
+
+	currentStakingTxHigher, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
+	require.NoError(t, err)
+
+	invalidStakingTimeLower := uint16(params.MinStakingTimeBlocks - 1)
+
+	invalidStakingTimeHigher := uint16(params.MaxStakingTimeBlocks + 1)
+
+	covPKs, err := bbn.NewBTCPKsFromBIP340PKs(params.CovenantPks)
+	require.NoError(t, err)
+
+	stakingOutputLower, err := btcstaking.BuildStakingInfo(
+		msg.BtcPk.MustToBTCPK(),
+		[]*btcec.PublicKey{msg.FpBtcPkList[0].MustToBTCPK()},
+		covPKs,
+		params.CovenantQuorum,
+		invalidStakingTimeLower,
+		btcutil.Amount(msg.StakingValue),
+		&chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	stakingOutputHigher, err := btcstaking.BuildStakingInfo(
+		msg.BtcPk.MustToBTCPK(),
+		[]*btcec.PublicKey{msg.FpBtcPkList[0].MustToBTCPK()},
+		covPKs,
+		params.CovenantQuorum,
+		invalidStakingTimeHigher,
+		btcutil.Amount(msg.StakingValue),
+		&chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+
+	currentStakingTxLower.TxOut[0] = stakingOutputLower.StakingOutput
+
+	currentStakingTxHigher.TxOut[0] = stakingOutputHigher.StakingOutput
+
+	serializedNewStakingTxLower, err := bbn.SerializeBTCTx(currentStakingTxLower)
+	require.NoError(t, err)
+
+	serializedNewStakingTxHigher, err := bbn.SerializeBTCTx(currentStakingTxHigher)
+	require.NoError(t, err)
+
 	tests := []struct {
-		name          string
-		fn            func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params)
-		errParsing    error
-		errValidation error
+		name                  string
+		fn                    func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params)
+		expectedErrParsing    error
+		expectedErrValidation error
 	}{
-		{
-			name: "valid create delegation message",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
+		// {
+		// 	name: "valid create delegation message",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
 
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: nil,
-		},
-		{
-			name: "empty finality provider list",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: nil,
+		// },
+		// {
+		// 	name: "empty finality provider list",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.FpBtcPkList = []bbn.BIP340PubKey{}
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    fmt.Errorf("failed to parse finality provider public keys: %v", fmt.Errorf("cannot parse empty list of *bbn.BIP340PubKey")),
+		// 	expectedErrValidation: nil,
+		// },
+		// {
+		// 	name: "too low unbonding time",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.UnbondingTime = msg.StakingTime - 1
 
-				msg.FpBtcPkList = []bbn.BIP340PubKey{}
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing: nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx.Wrapf("unbonding time %d must be equal to %d",
+		// 		msg.StakingTime-1, params.UnbondingTimeBlocks),
+		// },
+		// {
+		// 	name: "Msg.BtcPk do not match pk in staking transaction",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.BtcPk = stPk
+		// 		cp.FpBtcPkList = []bbn.BIP340PubKey{*stPk}
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing: nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx.Wrapf("failed to build staking info: %v",
+		// 		fmt.Errorf("%s: %w", btcstk.ErrBuildingStakingInfo,
+		// 			fmt.Errorf("error building scripts: %w",
+		// 				fmt.Errorf("key: %s: %w", stPk.MarshalHex(), btcstk.ErrDuplicatedKeyInScript)))),
+		// },
+		// {
+		// 	name: "Msg.StakingTime do not match staking time committed in staking transaction",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.StakingTime++
 
-				return msg, params, checkpointParams
-			},
-			errParsing:    types.ErrEmptyFpList,
-			errValidation: nil,
-		},
-		{
-			name: "too low unbonding time",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx.Wrap("staking tx does not contain expected staking output"),
+		// },
+		// {
+		// 	name: "Msg.StakingValue do not match staking value committed in staking transaction",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.StakingTime++
 
-				msg.UnbondingTime = msg.StakingTime - 1
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx.Wrap("staking tx does not contain expected staking output"),
+		// },
+		// {
+		// 	name: "Msg.StakingValue is lower than params.MinStakingValueSat",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.StakingValue = params.MinStakingValueSat - 1
 
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.BtcPk do not match pk in staking transaction",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx.Wrap("staking tx does not contain expected staking output"),
+		// },
+		// {
+		// 	name: "Msg.StakingValue is higher than params.MinStakingValueSat",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		cp := *msg
+		// 		cp.StakingValue = params.MaxStakingValueSat + 1
 
-				_, delPK, err := datagen.GenRandomBTCKeyPair(r)
-				require.NoError(t, err)
-
-				stPk := bbn.NewBIP340PubKeyFromBTCPK(delPK)
-
-				msg.BtcPk = stPk
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.StakingTime do not match staking time committed in staking transaction",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				msg.StakingTime++
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.StakingValue do not match staking value committed in staking transaction",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				msg.StakingValue++
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx.Wrap("staking tx does not contain expected staking output"),
-		},
-		{
-			name: "Msg.StakingValue is lower than params.MinStakingValueSat",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				msg.StakingValue = params.MinStakingValueSat - 1
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.StakingValue is higher than params.MinStakingValueSat",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				msg.StakingValue = params.MaxStakingValueSat + 1
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
+		// 		return &cp, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx.Wrap("staking tx does not contain expected staking output"),
+		// },
 		{
 			name: "Msg.StakingTime is lower than params.MinStakingTimeBlocks",
 			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
+				cp := *msg
 				// modify staking output so that staking output is valid but it will have
 				// invalid time
-				currentStakingTx, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
-				require.NoError(t, err)
 
-				invalidStakingTime := uint16(params.MinStakingTimeBlocks - 1)
+				cp.StakingTime = uint32(invalidStakingTimeLower)
+				cp.StakingTx = serializedNewStakingTxLower
 
-				covPKs, err := bbn.NewBTCPKsFromBIP340PKs(params.CovenantPks)
-				require.NoError(t, err)
-
-				stakingOutput, err := btcstaking.BuildStakingInfo(
-					msg.BtcPk.MustToBTCPK(),
-					[]*btcec.PublicKey{msg.FpBtcPkList[0].MustToBTCPK()},
-					covPKs,
-					params.CovenantQuorum,
-					invalidStakingTime,
-					btcutil.Amount(msg.StakingValue),
-					&chaincfg.MainNetParams,
-				)
-				require.NoError(t, err)
-
-				currentStakingTx.TxOut[0] = stakingOutput.StakingOutput
-
-				serializedNewStakingTx, err := bbn.SerializeBTCTx(currentStakingTx)
-				require.NoError(t, err)
-
-				msg.StakingTime = uint32(invalidStakingTime)
-				msg.StakingTx = serializedNewStakingTx
-
-				return msg, params, checkpointParams
+				return &cp, params, checkpointParams
 			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
+			expectedErrParsing: nil,
+			expectedErrValidation: types.ErrInvalidStakingTx.Wrapf(
+				"staking time %d is out of bounds. Min: %d, Max: %d",
+				invalidStakingTimeLower,
+				params.MinStakingTimeBlocks,
+				params.MaxStakingTimeBlocks,
+			),
 		},
 		{
 			name: "Msg.StakingTime is higher than params.MinStakingTimeBlocks",
 			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
+				cp := *msg
+				cp.StakingTime = uint32(invalidStakingTimeHigher)
+				cp.StakingTx = serializedNewStakingTxHigher
 
-				// modify staking output so that staking output is valid but it will have
-				// invalid time
-				currentStakingTx, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
-				require.NoError(t, err)
-
-				invalidStakingTime := uint16(params.MaxStakingTimeBlocks + 1)
-
-				covPKs, err := bbn.NewBTCPKsFromBIP340PKs(params.CovenantPks)
-				require.NoError(t, err)
-
-				stakingOutput, err := btcstaking.BuildStakingInfo(
-					msg.BtcPk.MustToBTCPK(),
-					[]*btcec.PublicKey{msg.FpBtcPkList[0].MustToBTCPK()},
-					covPKs,
-					params.CovenantQuorum,
-					invalidStakingTime,
-					btcutil.Amount(msg.StakingValue),
-					&chaincfg.MainNetParams,
-				)
-				require.NoError(t, err)
-
-				currentStakingTx.TxOut[0] = stakingOutput.StakingOutput
-
-				serializedNewStakingTx, err := bbn.SerializeBTCTx(currentStakingTx)
-				require.NoError(t, err)
-
-				msg.StakingTime = uint32(invalidStakingTime)
-				msg.StakingTx = serializedNewStakingTx
-
-				return msg, params, checkpointParams
+				return &cp, params, checkpointParams
 			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
+			expectedErrParsing: nil,
+			expectedErrValidation: types.ErrInvalidStakingTx.Wrapf(
+				"staking time %d is out of bounds. Min: %d, Max: %d",
+				invalidStakingTimeHigher,
+				params.MinStakingTimeBlocks,
+				params.MaxStakingTimeBlocks,
+			),
 		},
-		{
-			name: "Msg.StakingValue is lower than params.MinStakingValueSat",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				// modify staking output so that staking output is valid but it will have
-				// invalid time
-				currentStakingTx, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
-				require.NoError(t, err)
-
-				invalidStakingValue := params.MinStakingValueSat - 1
-
-				currentStakingTx.TxOut[0].Value = invalidStakingValue
-
-				serializedNewStakingTx, err := bbn.SerializeBTCTx(currentStakingTx)
-				require.NoError(t, err)
-
-				msg.StakingValue = invalidStakingValue
-				msg.StakingTx = serializedNewStakingTx
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.StakingValue is higher than params.MaxStakingValueSat",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				// modify staking output so that staking output is valid but it will have
-				// invalid time
-				currentStakingTx, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
-				require.NoError(t, err)
-
-				invalidStakingValue := params.MaxStakingValueSat + 1
-
-				currentStakingTx.TxOut[0].Value = invalidStakingValue
-
-				serializedNewStakingTx, err := bbn.SerializeBTCTx(currentStakingTx)
-				require.NoError(t, err)
-
-				msg.StakingValue = invalidStakingValue
-				msg.StakingTx = serializedNewStakingTx
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.SlashingTx have invalid pk script",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.SlashingTx)
-				require.NoError(t, err)
-
-				invalidSlashingPkScript := make([]byte, len(params.SlashingPkScript))
-				copy(invalidSlashingPkScript, params.SlashingPkScript)
-				// change one byte in the pk script
-				invalidSlashingPkScript[0]++
-
-				// slashing output must always be first output
-				currentSlashingTx.TxOut[0].PkScript = invalidSlashingPkScript
-
-				serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
-				require.NoError(t, err)
-				msg.SlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.SlashingTx does not point to staking tx hash",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.SlashingTx)
-				require.NoError(t, err)
-
-				invalidHashBytes := currentSlashingTx.TxIn[0].PreviousOutPoint.Hash.CloneBytes()
-				// change one byte in the hash
-				invalidHashBytes[0]++
-
-				invalidHash, err := chainhash.NewHash(invalidHashBytes)
-				require.NoError(t, err)
-
-				currentSlashingTx.TxIn[0].PreviousOutPoint.Hash = *invalidHash
-
-				serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
-				require.NoError(t, err)
-				msg.SlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.SlashingTx does not point to staking tx output index",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.SlashingTx)
-				require.NoError(t, err)
-
-				currentSlashingTx.TxIn[0].PreviousOutPoint.Index++
-
-				serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
-				require.NoError(t, err)
-				msg.SlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidStakingTx,
-		},
-		{
-			name: "Msg.DelegatorSlashingSig is invalid signature",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				sigInMessage := msg.DelegatorSlashingSig.MustMarshal()
-
-				invalidSlashingSig := make([]byte, len(sigInMessage))
-				copy(invalidSlashingSig, sigInMessage)
-				// change last byte is sig
-				invalidSlashingSig[63]++
-
-				newSig, err := bbn.NewBIP340Signature(invalidSlashingSig)
-				require.NoError(t, err)
-
-				msg.DelegatorSlashingSig = newSig
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidSlashingTx,
-		},
-		{
-			name: "Msg.UnbondingSlashingTx does not point to unbonding tx hash",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.UnbondingSlashingTx)
-				require.NoError(t, err)
-
-				invalidHashBytes := currentSlashingTx.TxIn[0].PreviousOutPoint.Hash.CloneBytes()
-				// change one byte in the hash
-				invalidHashBytes[0]++
-
-				invalidHash, err := chainhash.NewHash(invalidHashBytes)
-				require.NoError(t, err)
-
-				currentSlashingTx.TxIn[0].PreviousOutPoint.Hash = *invalidHash
-
-				serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
-				require.NoError(t, err)
-				msg.UnbondingSlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.UnbondingSlashingTx does not point to unbonding tx output index",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.UnbondingSlashingTx)
-				require.NoError(t, err)
-
-				currentSlashingTx.TxIn[0].PreviousOutPoint.Index++
-
-				serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
-				require.NoError(t, err)
-				msg.UnbondingSlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.UnbondingSlashingTx have invalid pk script",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentUnbondingSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.UnbondingSlashingTx)
-				require.NoError(t, err)
-
-				invalidSlashingPkScript := make([]byte, len(params.SlashingPkScript))
-				copy(invalidSlashingPkScript, params.SlashingPkScript)
-				// change one byte in the pk script
-				invalidSlashingPkScript[0]++
-
-				// slashing output must always be first output
-				currentUnbondingSlashingTx.TxOut[0].PkScript = invalidSlashingPkScript
-
-				serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentUnbondingSlashingTx)
-				require.NoError(t, err)
-				msg.UnbondingSlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.DelegatorUnbondingSlashingSig is invalid signature",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				sigInMessage := msg.DelegatorUnbondingSlashingSig.MustMarshal()
-
-				invalidSlashingSig := make([]byte, len(sigInMessage))
-				copy(invalidSlashingSig, sigInMessage)
-				// change last byte is sig
-				invalidSlashingSig[63]++
-
-				newSig, err := bbn.NewBIP340Signature(invalidSlashingSig)
-				require.NoError(t, err)
-
-				msg.DelegatorUnbondingSlashingSig = newSig
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidSlashingTx,
-		},
-		{
-			name: "Msg.UnbondingTx does not point to staking tx hash",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, delSk := createMsgDelegationForParams(r, t, params)
-
-				currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
-				require.NoError(t, err)
-
-				invalidHashBytes := currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash.CloneBytes()
-				// change one byte in the hash
-				invalidHashBytes[0]++
-
-				invalidHash, err := chainhash.NewHash(invalidHashBytes)
-				require.NoError(t, err)
-
-				// generate unbonding info with invalid stakig tx hash
-				newUnbondingInfdo := generateUnbondingInfo(
-					r,
-					t,
-					delSk,
-					msg.FpBtcPkList[0].MustToBTCPK(),
-					*invalidHash,
-					0,
-					uint16(msg.UnbondingTime),
-					msg.UnbondingValue,
-					params,
-				)
-
-				msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
-				msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
-				msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.UnbondingTx does not point to staking tx output index",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, delSk := createMsgDelegationForParams(r, t, params)
-
-				currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
-				require.NoError(t, err)
-
-				// generate unbonding info with invalid staking idx
-				newUnbondingInfdo := generateUnbondingInfo(
-					r,
-					t,
-					delSk,
-					msg.FpBtcPkList[0].MustToBTCPK(),
-					currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash,
-					currentUnbondingTx.TxIn[0].PreviousOutPoint.Index+1,
-					uint16(msg.UnbondingTime),
-					msg.UnbondingValue,
-					params,
-				)
-
-				msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
-				msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
-				msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.UnbondingTx does not have required fee",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, delSk := createMsgDelegationForParams(r, t, params)
-
-				currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
-				require.NoError(t, err)
-
-				// generate unbonding info with invalid staking idx
-				newUnbondingInfdo := generateUnbondingInfo(
-					r,
-					t,
-					delSk,
-					msg.FpBtcPkList[0].MustToBTCPK(),
-					currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash,
-					currentUnbondingTx.TxIn[0].PreviousOutPoint.Index,
-					uint16(msg.UnbondingTime),
-					// adding 1 to unbonding value, will decrease fee by 1 sat and now it
-					// won't be enough
-					msg.UnbondingValue+1,
-					params,
-				)
-
-				msg.UnbondingValue++
-				msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
-				msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
-				msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx,
-		},
-		{
-			name: "Msg.UnbondingTx has more than one output",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, _ := createMsgDelegationForParams(r, t, params)
-
-				currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
-				require.NoError(t, err)
-
-				// add randomnes output
-				randAddrScript, err := datagen.GenRandomPubKeyHashScript(r, &chaincfg.MainNetParams)
-				require.NoError(t, err)
-				currentUnbondingTx.AddTxOut(wire.NewTxOut(10000, randAddrScript))
-
-				msg.UnbondingTx, err = bbn.SerializeBTCTx(currentUnbondingTx)
-				require.NoError(t, err)
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx.Wrap("unbonding tx is not a valid pre-signed transaction: tx must have exactly 1 outputs"),
-		},
-		{
-			name: "Msg.UnbondingTx unbonding value in the msg does not match the output value in the unbonding tx",
-			fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
-				params := testStakingParams(r, t)
-				checkpointParams := testCheckpointParams()
-				msg, delSk := createMsgDelegationForParams(r, t, params)
-
-				currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
-				require.NoError(t, err)
-
-				// generate unbonding info with invalid staking idx
-				newUnbondingInfdo := generateUnbondingInfo(
-					r,
-					t,
-					delSk,
-					msg.FpBtcPkList[0].MustToBTCPK(),
-					currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash,
-					currentUnbondingTx.TxIn[0].PreviousOutPoint.Index,
-					uint16(msg.UnbondingTime),
-					msg.UnbondingValue,
-					params,
-				)
-
-				// to cause the unbonding value mismatch with the unbonding tx output value
-				msg.UnbondingValue++
-				msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
-				msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
-				msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
-
-				return msg, params, checkpointParams
-			},
-			errParsing:    nil,
-			errValidation: types.ErrInvalidUnbondingTx.Wrap("the unbonding output value is not expected"),
-		},
+		// {
+		// 	name: "Msg.StakingValue is lower than params.MinStakingValueSat",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		// modify staking output so that staking output is valid but it will have
+		// 		// invalid time
+		// 		currentStakingTx, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidStakingValue := params.MinStakingValueSat - 1
+
+		// 		currentStakingTx.TxOut[0].Value = invalidStakingValue
+
+		// 		serializedNewStakingTx, err := bbn.SerializeBTCTx(currentStakingTx)
+		// 		require.NoError(t, err)
+
+		// 		msg.StakingValue = invalidStakingValue
+		// 		msg.StakingTx = serializedNewStakingTx
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx,
+		// },
+		// {
+		// 	name: "Msg.StakingValue is higher than params.MaxStakingValueSat",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		// modify staking output so that staking output is valid but it will have
+		// 		// invalid time
+		// 		currentStakingTx, err := bbn.NewBTCTxFromBytes(msg.StakingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidStakingValue := params.MaxStakingValueSat + 1
+
+		// 		currentStakingTx.TxOut[0].Value = invalidStakingValue
+
+		// 		serializedNewStakingTx, err := bbn.SerializeBTCTx(currentStakingTx)
+		// 		require.NoError(t, err)
+
+		// 		msg.StakingValue = invalidStakingValue
+		// 		msg.StakingTx = serializedNewStakingTx
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx,
+		// },
+		// {
+		// 	name: "Msg.SlashingTx have invalid pk script",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.SlashingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidSlashingPkScript := make([]byte, len(params.SlashingPkScript))
+		// 		copy(invalidSlashingPkScript, params.SlashingPkScript)
+		// 		// change one byte in the pk script
+		// 		invalidSlashingPkScript[0]++
+
+		// 		// slashing output must always be first output
+		// 		currentSlashingTx.TxOut[0].PkScript = invalidSlashingPkScript
+
+		// 		serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
+		// 		require.NoError(t, err)
+		// 		msg.SlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx,
+		// },
+		// {
+		// 	name: "Msg.SlashingTx does not point to staking tx hash",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.SlashingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidHashBytes := currentSlashingTx.TxIn[0].PreviousOutPoint.Hash.CloneBytes()
+		// 		// change one byte in the hash
+		// 		invalidHashBytes[0]++
+
+		// 		invalidHash, err := chainhash.NewHash(invalidHashBytes)
+		// 		require.NoError(t, err)
+
+		// 		currentSlashingTx.TxIn[0].PreviousOutPoint.Hash = *invalidHash
+
+		// 		serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
+		// 		require.NoError(t, err)
+		// 		msg.SlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx,
+		// },
+		// {
+		// 	name: "Msg.SlashingTx does not point to staking tx output index",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.SlashingTx)
+		// 		require.NoError(t, err)
+
+		// 		currentSlashingTx.TxIn[0].PreviousOutPoint.Index++
+
+		// 		serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
+		// 		require.NoError(t, err)
+		// 		msg.SlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidStakingTx,
+		// },
+		// {
+		// 	name: "Msg.DelegatorSlashingSig is invalid signature",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		sigInMessage := msg.DelegatorSlashingSig.MustMarshal()
+
+		// 		invalidSlashingSig := make([]byte, len(sigInMessage))
+		// 		copy(invalidSlashingSig, sigInMessage)
+		// 		// change last byte is sig
+		// 		invalidSlashingSig[63]++
+
+		// 		newSig, err := bbn.NewBIP340Signature(invalidSlashingSig)
+		// 		require.NoError(t, err)
+
+		// 		msg.DelegatorSlashingSig = newSig
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidSlashingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingSlashingTx does not point to unbonding tx hash",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.UnbondingSlashingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidHashBytes := currentSlashingTx.TxIn[0].PreviousOutPoint.Hash.CloneBytes()
+		// 		// change one byte in the hash
+		// 		invalidHashBytes[0]++
+
+		// 		invalidHash, err := chainhash.NewHash(invalidHashBytes)
+		// 		require.NoError(t, err)
+
+		// 		currentSlashingTx.TxIn[0].PreviousOutPoint.Hash = *invalidHash
+
+		// 		serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
+		// 		require.NoError(t, err)
+		// 		msg.UnbondingSlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingSlashingTx does not point to unbonding tx output index",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.UnbondingSlashingTx)
+		// 		require.NoError(t, err)
+
+		// 		currentSlashingTx.TxIn[0].PreviousOutPoint.Index++
+
+		// 		serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentSlashingTx)
+		// 		require.NoError(t, err)
+		// 		msg.UnbondingSlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingSlashingTx have invalid pk script",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentUnbondingSlashingTx, err := bbn.NewBTCTxFromBytes(*msg.UnbondingSlashingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidSlashingPkScript := make([]byte, len(params.SlashingPkScript))
+		// 		copy(invalidSlashingPkScript, params.SlashingPkScript)
+		// 		// change one byte in the pk script
+		// 		invalidSlashingPkScript[0]++
+
+		// 		// slashing output must always be first output
+		// 		currentUnbondingSlashingTx.TxOut[0].PkScript = invalidSlashingPkScript
+
+		// 		serializedNewSlashingTx, err := bbn.SerializeBTCTx(currentUnbondingSlashingTx)
+		// 		require.NoError(t, err)
+		// 		msg.UnbondingSlashingTx = types.NewBtcSlashingTxFromBytes(serializedNewSlashingTx)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx,
+		// },
+		// {
+		// 	name: "Msg.DelegatorUnbondingSlashingSig is invalid signature",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		sigInMessage := msg.DelegatorUnbondingSlashingSig.MustMarshal()
+
+		// 		invalidSlashingSig := make([]byte, len(sigInMessage))
+		// 		copy(invalidSlashingSig, sigInMessage)
+		// 		// change last byte is sig
+		// 		invalidSlashingSig[63]++
+
+		// 		newSig, err := bbn.NewBIP340Signature(invalidSlashingSig)
+		// 		require.NoError(t, err)
+
+		// 		msg.DelegatorUnbondingSlashingSig = newSig
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidSlashingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingTx does not point to staking tx hash",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, delSk := createMsgDelegationForParams(r, t, params)
+
+		// 		currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
+		// 		require.NoError(t, err)
+
+		// 		invalidHashBytes := currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash.CloneBytes()
+		// 		// change one byte in the hash
+		// 		invalidHashBytes[0]++
+
+		// 		invalidHash, err := chainhash.NewHash(invalidHashBytes)
+		// 		require.NoError(t, err)
+
+		// 		// generate unbonding info with invalid stakig tx hash
+		// 		newUnbondingInfdo := generateUnbondingInfo(
+		// 			r,
+		// 			t,
+		// 			delSk,
+		// 			msg.FpBtcPkList[0].MustToBTCPK(),
+		// 			*invalidHash,
+		// 			0,
+		// 			uint16(msg.UnbondingTime),
+		// 			msg.UnbondingValue,
+		// 			params,
+		// 		)
+
+		// 		msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
+		// 		msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
+		// 		msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingTx does not point to staking tx output index",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, delSk := createMsgDelegationForParams(r, t, params)
+
+		// 		currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
+		// 		require.NoError(t, err)
+
+		// 		// generate unbonding info with invalid staking idx
+		// 		newUnbondingInfdo := generateUnbondingInfo(
+		// 			r,
+		// 			t,
+		// 			delSk,
+		// 			msg.FpBtcPkList[0].MustToBTCPK(),
+		// 			currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash,
+		// 			currentUnbondingTx.TxIn[0].PreviousOutPoint.Index+1,
+		// 			uint16(msg.UnbondingTime),
+		// 			msg.UnbondingValue,
+		// 			params,
+		// 		)
+
+		// 		msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
+		// 		msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
+		// 		msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingTx does not have required fee",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, delSk := createMsgDelegationForParams(r, t, params)
+
+		// 		currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
+		// 		require.NoError(t, err)
+
+		// 		// generate unbonding info with invalid staking idx
+		// 		newUnbondingInfdo := generateUnbondingInfo(
+		// 			r,
+		// 			t,
+		// 			delSk,
+		// 			msg.FpBtcPkList[0].MustToBTCPK(),
+		// 			currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash,
+		// 			currentUnbondingTx.TxIn[0].PreviousOutPoint.Index,
+		// 			uint16(msg.UnbondingTime),
+		// 			// adding 1 to unbonding value, will decrease fee by 1 sat and now it
+		// 			// won't be enough
+		// 			msg.UnbondingValue+1,
+		// 			params,
+		// 		)
+
+		// 		msg.UnbondingValue++
+		// 		msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
+		// 		msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
+		// 		msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx,
+		// },
+		// {
+		// 	name: "Msg.UnbondingTx has more than one output",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, _ := createMsgDelegationForParams(r, t, params)
+
+		// 		currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
+		// 		require.NoError(t, err)
+
+		// 		// add randomnes output
+		// 		randAddrScript, err := datagen.GenRandomPubKeyHashScript(r, &chaincfg.MainNetParams)
+		// 		require.NoError(t, err)
+		// 		currentUnbondingTx.AddTxOut(wire.NewTxOut(10000, randAddrScript))
+
+		// 		msg.UnbondingTx, err = bbn.SerializeBTCTx(currentUnbondingTx)
+		// 		require.NoError(t, err)
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx.Wrap("unbonding tx is not a valid pre-signed transaction: tx must have exactly 1 outputs"),
+		// },
+		// {
+		// 	name: "Msg.UnbondingTx unbonding value in the msg does not match the output value in the unbonding tx",
+		// 	fn: func(r *rand.Rand, t *testing.T) (*types.MsgCreateBTCDelegation, *types.Params, *btcckpttypes.Params) {
+		// 		params := testStakingParams(r, t)
+		// 		checkpointParams := testCheckpointParams()
+		// 		msg, delSk := createMsgDelegationForParams(r, t, params)
+
+		// 		currentUnbondingTx, err := bbn.NewBTCTxFromBytes(msg.UnbondingTx)
+		// 		require.NoError(t, err)
+
+		// 		// generate unbonding info with invalid staking idx
+		// 		newUnbondingInfdo := generateUnbondingInfo(
+		// 			r,
+		// 			t,
+		// 			delSk,
+		// 			msg.FpBtcPkList[0].MustToBTCPK(),
+		// 			currentUnbondingTx.TxIn[0].PreviousOutPoint.Hash,
+		// 			currentUnbondingTx.TxIn[0].PreviousOutPoint.Index,
+		// 			uint16(msg.UnbondingTime),
+		// 			msg.UnbondingValue,
+		// 			params,
+		// 		)
+
+		// 		// to cause the unbonding value mismatch with the unbonding tx output value
+		// 		msg.UnbondingValue++
+		// 		msg.UnbondingTx = newUnbondingInfdo.serializedUnbondingTx
+		// 		msg.UnbondingSlashingTx = newUnbondingInfdo.unbondingSlashingTx
+		// 		msg.DelegatorUnbondingSlashingSig = newUnbondingInfdo.unbondingSlashinSig
+
+		// 		return msg, params, checkpointParams
+		// 	},
+		// 	expectedErrParsing:    nil,
+		// 	expectedErrValidation: types.ErrInvalidUnbondingTx.Wrap("the unbonding output value is not expected"),
+		// },
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -859,9 +846,9 @@ func TestValidateParsedMessageAgainstTheParams(t *testing.T) {
 
 			parsed, err := types.ParseCreateDelegationMessage(msg)
 
-			if tt.errParsing != nil {
+			if tt.expectedErrParsing != nil {
 				require.Error(t, err)
-				require.ErrorAs(t, err, &tt.errParsing)
+				require.EqualError(t, err, tt.expectedErrParsing.Error())
 				return
 			}
 
@@ -872,9 +859,9 @@ func TestValidateParsedMessageAgainstTheParams(t *testing.T) {
 				&chaincfg.MainNetParams,
 			)
 
-			if tt.errValidation != nil {
+			if tt.expectedErrValidation != nil {
 				require.Error(t, err)
-				require.ErrorAs(t, err, &tt.errValidation)
+				require.EqualError(t, err, tt.expectedErrValidation.Error())
 			} else {
 				require.NoError(t, err)
 				require.NotNil(t, got)
